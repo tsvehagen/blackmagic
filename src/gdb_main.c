@@ -254,7 +254,10 @@ int gdb_main_loop(struct target_controller *tc, bool in_syscall)
 			gdb_putpacketz("OK");
 			break;
 
-		case 0x04:
+		case 0x04:	/* CDCACM closed */
+			target_list_free();
+			break;
+
 		case 'D':	/* GDB 'detach' command. */
 			if(cur_target) {
 				SET_RUN_STATE(1);

@@ -213,6 +213,7 @@ static const struct {
 };
 
 extern bool cortexa_probe(ADIv5_AP_t *apb, uint32_t debug_base);
+static void adiv5_dp_cleanup(ADIv5_DP_t *dp);
 
 void adiv5_dp_ref(ADIv5_DP_t *dp)
 {
@@ -226,8 +227,12 @@ void adiv5_ap_ref(ADIv5_AP_t *ap)
 
 void adiv5_dp_unref(ADIv5_DP_t *dp)
 {
-	if (--(dp->refcnt) == 0)
+	DEBUG("Unref DP: refcnt=%d\n", dp->refcnt);
+
+	if (--(dp->refcnt) == 0) {
+		adiv5_dp_cleanup(dp);
 		free(dp);
+	}
 }
 
 void adiv5_ap_unref(ADIv5_AP_t *ap)
@@ -442,6 +447,8 @@ void adiv5_dp_init(ADIv5_DP_t *dp)
 		ctrlstat = adiv5_dp_read(dp, ADIV5_DP_CTRLSTAT);
 	}
 
+	DEBUG("CTRL/STAT=%08"PRIx32"\n", ctrlstat);
+
 	/* Write request for system and debug power up */
 	adiv5_dp_write(dp, ADIV5_DP_CTRLSTAT,
 			ctrlstat |= ADIV5_DP_CTRLSTAT_CSYSPWRUPREQ |
@@ -541,6 +548,29 @@ void adiv5_dp_init(ADIv5_DP_t *dp)
 		}
 	}
 	adiv5_dp_unref(dp);
+}
+
+static void adiv5_dp_cleanup(ADIv5_DP_t *dp)
+{
+	volatile uint32_t ctrlstat = 0;
+
+	volatile struct exception e;
+	TRY_CATCH (e, EXCEPTION_TIMEOUT) {
+		ctrlstat = adiv5_dp_read(dp, ADIV5_DP_CTRLSTAT);
+	}
+	if (e.type) {
+		DEBUG("DP not responding!  Trying abort sequence...\n");
+		adiv5_dp_abort(dp, ADIV5_DP_ABORT_DAPABORT);
+		ctrlstat = adiv5_dp_read(dp, ADIV5_DP_CTRLSTAT);
+	}
+
+	DEBUG("1. CTRL/STAT=%08"PRIx32"\n", ctrlstat);
+
+	/* Write request for system and debug power down */
+	adiv5_dp_write(dp, ADIV5_DP_CTRLSTAT, 0);
+
+	ctrlstat = adiv5_dp_read(dp, ADIV5_DP_CTRLSTAT);
+	DEBUG("2. CTRL/STAT=%08"PRIx32"\n", ctrlstat);
 }
 
 #define ALIGNOF(x) (((x) & 3) == 0 ? ALIGN_WORD : \
